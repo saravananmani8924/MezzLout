@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -219,18 +218,24 @@ namespace Mezz_L_Out
             {
                 foreach (var y in cumulative.Where(v => v <= yStations.Last() + Tol))
                 {
-                    var start = LocalToGlobal(cs, xStations.First(), y, z);
-                    var end = LocalToGlobal(cs, xStations.Last(), y, z);
-                    joists.Add(CreateBeam(start, end, _data.JoistBeamSec, "3"));
+                    for (var i = 0; i < xStations.Count - 1; i++)
+                    {
+                        var start = LocalToGlobal(cs, xStations[i], y, z);
+                        var end = LocalToGlobal(cs, xStations[i + 1], y, z);
+                        joists.Add(CreateBeam(start, end, _data.JoistBeamSec, "3"));
+                    }
                 }
             }
             else
             {
                 foreach (var x in cumulative.Where(v => v <= xStations.Last() + Tol))
                 {
-                    var start = LocalToGlobal(cs, x, yStations.First(), z);
-                    var end = LocalToGlobal(cs, x, yStations.Last(), z);
-                    joists.Add(CreateBeam(start, end, _data.JoistBeamSec, "3"));
+                    for (var i = 0; i < yStations.Count - 1; i++)
+                    {
+                        var start = LocalToGlobal(cs, x, yStations[i], z);
+                        var end = LocalToGlobal(cs, x, yStations[i + 1], z);
+                        joists.Add(CreateBeam(start, end, _data.JoistBeamSec, "3"));
+                    }
                 }
             }
 
@@ -335,52 +340,56 @@ namespace Mezz_L_Out
                 return null;
             }
 
-            _model.GetWorkPlaneHandler().SetCurrentTransformationPlane(new TransformationPlane(primaryPart.GetCoordinateSystem()));
-
-            var connection = new Connection
+            try
             {
-                Name = "Mezz_Finplate",
-                Number = -200000,
-                PositionType = Connection.PositionTypeEnum.MIDDLE_PLANE,
-                AutoDirectionType = Connection.AutoDirectionTypeEnum.AUTODIR_NA,
-                Class = 0,
-                Code = string.Empty
-            };
+                _model.GetWorkPlaneHandler().SetCurrentTransformationPlane(new TransformationPlane(primaryPart.GetCoordinateSystem()));
 
-            connection.SetPrimaryObject(primary);
-            connection.SetSecondaryObject(secondary);
+                var connection = new Connection
+                {
+                    Name = "Mezz_Finplate",
+                    Number = -200000,
+                    PositionType = PositionTypeEnum.MIDDLE_PLANE,
+                    AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_NA,
+                    Class = 0,
+                    Code = string.Empty
+                };
 
-            if (!string.IsNullOrWhiteSpace(settingsFile))
-            {
-                connection.LoadAttributesFromFile(settingsFile);
+                connection.SetPrimaryObject(primary);
+                connection.SetSecondaryObject(secondary);
+
+                if (!string.IsNullOrWhiteSpace(settingsFile))
+                {
+                    connection.LoadAttributesFromFile(settingsFile);
+                }
+
+                connection.SetAttribute("BoltDia", "16");
+                connection.SetAttribute("ConnType", MapConnType(_data.Jconnectiontype));
+                connection.SetAttribute("PlateRot", MapPlateRotation(_data.JConOrient, primaryPart, joistEnd));
+                connection.SetAttribute("StiffDepth", MapStiffDepth(_data.JConStiffDep));
+
+                // mm values (replacing generated imp() values)
+                connection.SetAttribute("CPltThick", 8.0);
+                connection.SetAttribute("EdgeDist", 30.0);
+                connection.SetAttribute("EndDist", 40.0);
+                connection.SetAttribute("FPltThick", 8.0);
+                connection.SetAttribute("Gap", 10.0);
+                connection.SetAttribute("Pitch", "80");
+                connection.SetAttribute("PltLength", 200.0);
+                connection.SetAttribute("PltPosition", "0");
+                connection.SetAttribute("ReferX", 35.0);
+                connection.SetAttribute("ReferY", 75.0);
+                connection.SetAttribute("SymbolPosition", 2.5);
+
+                connection.SetAttribute("IsBackStiff", "0");
+                connection.SetAttribute("IsFullDep", "0");
+                connection.SetAttribute("IsStandard", "0");
+
+                return connection.Insert() ? connection : null;
             }
-
-            connection.SetAttribute("BoltDia", "16");
-            connection.SetAttribute("ConnType", MapConnType(_data.Jconnectiontype));
-            connection.SetAttribute("PlateRot", MapPlateRotation(_data.JConOrient, primaryPart, joistEnd));
-            connection.SetAttribute("StiffDepth", MapStiffDepth(_data.JConStiffDep));
-
-            // mm values (replacing generated imp() values)
-            connection.SetAttribute("CPltThick", 8.0);
-            connection.SetAttribute("EdgeDist", 30.0);
-            connection.SetAttribute("EndDist", 40.0);
-            connection.SetAttribute("FPltThick", 8.0);
-            connection.SetAttribute("Gap", 10.0);
-            connection.SetAttribute("Pitch", "80");
-            connection.SetAttribute("PltLength", 200.0);
-            connection.SetAttribute("PltPosition", "0");
-            connection.SetAttribute("ReferX", 35.0);
-            connection.SetAttribute("ReferY", 75.0);
-            connection.SetAttribute("SymbolPosition", 2.5);
-
-            connection.SetAttribute("IsBackStiff", "0");
-            connection.SetAttribute("IsFullDep", "0");
-            connection.SetAttribute("IsStandard", "0");
-
-            var inserted = connection.Insert() ? connection : null;
-
-            _model.GetWorkPlaneHandler().SetCurrentTransformationPlane(previousPlane);
-            return inserted;
+            finally
+            {
+                _model.GetWorkPlaneHandler().SetCurrentTransformationPlane(previousPlane);
+            }
         }
 
         private static string MapConnType(int index)
@@ -430,10 +439,12 @@ namespace Mezz_L_Out
         {
             var columns = new List<Beam>();
 
-            foreach (var x in xStations)
+            for (var ix = 1; ix < xStations.Count - 1; ix++)
             {
-                foreach (var y in yStations)
+                for (var iy = 1; iy < yStations.Count - 1; iy++)
                 {
+                    var x = xStations[ix];
+                    var y = yStations[iy];
                     var basePt = LocalToGlobal(cs, x, y, 0);
                     var topPt = LocalToGlobal(cs, x, y, mezzZ);
                     var col = new Beam(Beam.BeamTypeEnum.COLUMN)
@@ -482,8 +493,8 @@ namespace Mezz_L_Out
             {
                 Number = number,
                 Name = name,
-                PositionType = Connection.PositionTypeEnum.MIDDLE_PLANE,
-                AutoDirectionType = Connection.AutoDirectionTypeEnum.AUTODIR_NA
+                PositionType = PositionTypeEnum.MIDDLE_PLANE,
+                AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_NA
             };
 
             c.SetPrimaryObject(primary);
@@ -493,10 +504,11 @@ namespace Mezz_L_Out
 
         private static Point LocalToGlobal(CoordinateSystem cs, double x, double y, double z)
         {
+            var axisZ = Cross(cs.AxisX, cs.AxisY);
             return new Point(
-                cs.Origin.X + x * cs.AxisX.X + y * cs.AxisY.X + z * cs.AxisZ.X,
-                cs.Origin.Y + x * cs.AxisX.Y + y * cs.AxisY.Y + z * cs.AxisZ.Y,
-                cs.Origin.Z + x * cs.AxisX.Z + y * cs.AxisY.Z + z * cs.AxisZ.Z);
+                cs.Origin.X + x * cs.AxisX.X + y * cs.AxisY.X + z * axisZ.X,
+                cs.Origin.Y + x * cs.AxisX.Y + y * cs.AxisY.Y + z * axisZ.Y,
+                cs.Origin.Z + x * cs.AxisX.Z + y * cs.AxisY.Z + z * axisZ.Z);
         }
 
         private static double Dot(Vector a, Vector b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
